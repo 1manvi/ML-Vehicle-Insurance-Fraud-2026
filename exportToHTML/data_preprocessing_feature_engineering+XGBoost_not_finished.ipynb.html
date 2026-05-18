@@ -1,0 +1,832 @@
+<html>
+<head>
+<title>data_preprocessing_feature_engineering+XGBoost_not_finished.ipynb</title>
+<meta http-equiv="Content-Type" content="text/html; charset=utf-8">
+<style type="text/css">
+.s0 { color: #000000;}
+.s1 { color: #d73a49;}
+.s2 { color: #b31d28;}
+.s3 { color: #032f62;}
+.s4 { color: #969896;}
+.s5 { color: #005cc5;}
+.s6 { color: #183691;}
+.ls0 { height: 1px; border-width: 0; color: #c0c0c0; background-color:#c0c0c0}
+</style>
+</head>
+<body bgcolor="#ffffff">
+<table CELLSPACING=0 CELLPADDING=5 COLS=1 WIDTH="100%" BGCOLOR="#c0c0c0" >
+<tr><td><center>
+<font face="Arial, Helvetica" color="#000000">
+data_preprocessing_feature_engineering+XGBoost_not_finished.ipynb</font>
+</center></td></tr></table>
+<pre>#%% md 
+# 1. Load data <hr class="ls0">#%% 
+<span class="s1">import </span>pandas <span class="s1">as </span>pd
+<span class="s1">import </span>numpy <span class="s1">as </span>np
+<span class="s1">import </span>seaborn <span class="s1">as </span>sns
+<span class="s1">import </span>matplotlib.pyplot <span class="s1">as </span>plt
+<span class="s1">from </span>sklearn.preprocessing <span class="s1">import </span>StandardScaler, LabelEncoder, OneHotEncoder, OrdinalEncoder
+<span class="s1">from </span>sklearn.model_selection <span class="s1">import </span>train_test_split
+<span class="s1">from </span>sklearn.impute <span class="s1">import </span>SimpleImputer
+<span class="s1">from </span>sklearn.preprocessing <span class="s1">import </span>StandardScaler, MinMaxScaler
+<span class="s1">from </span>sklearn.linear_model <span class="s1">import </span>LogisticRegression
+<span class="s1">from </span>sklearn.dummy <span class="s1">import </span>DummyClassifier
+<span class="s1">from </span>imblearn.over_sampling <span class="s1">import </span>RandomOverSampler
+<span class="s1">from </span>imblearn.over_sampling <span class="s1">import </span>SMOTE
+<span class="s1">import </span>xgboost <span class="s1">as </span>xgb<hr class="ls0">#%% 
+df <span class="s2">= </span>pd.read_csv(<span class="s3">&quot;carclaims.csv&quot;</span>)<hr class="ls0">#%% 
+df.shape<hr class="ls0">#%% 
+df.head()<hr class="ls0">#%% md 
+# 2. Clean columns names (cleaning) <hr class="ls0">#%% 
+df.columns <span class="s2">= </span>df.columns.str.lower().str.replace(<span class="s3">'[^a-z0-9]'</span>, <span class="s3">'_'</span>, regex<span class="s2">=</span><span class="s1">True</span>)
+print(df.columns.tolist())<hr class="ls0">#%% md 
+# 3. Drop Leakage and Useless Columns <hr class="ls0">#%% 
+drop_cols <span class="s2">= </span>[
+    <span class="s3">'policynumber'</span>,
+    <span class="s3">'repnumber'</span>,
+    <span class="s3">'daysofpolicyclaimed'</span>,
+    <span class="s3">'dayofweekclaimed'</span>,
+    <span class="s3">'monthclaimed'</span>,
+    <span class="s3">'weekofmonthclaimed'</span>,
+    <span class="s3">'days_policy_claim'</span>,
+]
+
+drop_cols <span class="s2">= </span>[c <span class="s1">for </span>c <span class="s1">in </span>drop_cols <span class="s1">if </span>c <span class="s1">in </span>df.columns]
+df.drop(columns<span class="s2">=</span>drop_cols, inplace<span class="s2">=</span><span class="s1">True</span>)
+print(<span class="s3">&quot;Remaining shape:&quot;</span>, df.shape)<hr class="ls0">#%% 
+df.info()<hr class="ls0">#%% md 
+# Split Data <hr class="ls0">#%% 
+y <span class="s2">= </span>df[<span class="s3">&quot;fraudfound&quot;</span>] <span class="s4">#target fraudfound column</span>
+x  <span class="s2">= </span>df.drop(columns<span class="s2">=</span>[<span class="s3">&quot;fraudfound&quot;</span>])
+
+X_train, X_other, y_train, y_other <span class="s2">= </span>train_test_split(
+    x, y, test_size<span class="s2">=</span><span class="s5">0.3</span>, stratify<span class="s2">=</span>y, random_state<span class="s2">=</span><span class="s5">510</span>) <span class="s4">#70 - 30 split</span>
+
+X_val, X_test, y_val, y_test <span class="s2">= </span>train_test_split(
+    X_other, y_other, test_size<span class="s2">=</span><span class="s5">0.5</span>, stratify<span class="s2">=</span>y_other, random_state<span class="s2">=</span><span class="s5">510</span>) <span class="s4">#15 - 15 split for validation and test</span>
+
+print(<span class="s3">&quot;Training:&quot;</span>, X_train.shape, y_train.shape)
+print(<span class="s3">&quot;Validation:&quot;</span>, X_val.shape, y_val.shape)
+print(<span class="s3">&quot;Test:&quot;</span>, X_test.shape, y_test.shape)
+
+<span class="s4">#Encode target to binary (0/1)</span>
+y_train <span class="s2">= </span>y_train.map({<span class="s3">&quot;No&quot;</span><span class="s2">: </span><span class="s5">0</span>, <span class="s3">&quot;Yes&quot;</span><span class="s2">: </span><span class="s5">1</span>})
+y_val <span class="s2">= </span>y_val.map({<span class="s3">&quot;No&quot;</span><span class="s2">: </span><span class="s5">0</span>, <span class="s3">&quot;Yes&quot;</span><span class="s2">: </span><span class="s5">1</span>})
+y_test <span class="s2">= </span>y_test.map({<span class="s3">&quot;No&quot;</span><span class="s2">: </span><span class="s5">0</span>, <span class="s3">&quot;Yes&quot;</span><span class="s2">: </span><span class="s5">1</span>})
+
+<span class="s4"># Quick check</span>
+print(<span class="s3">&quot;y_train unique values:&quot;</span>, y_train.unique())
+print(y_train.value_counts())<hr class="ls0">#%% md 
+# 5. Handle Missing Values &amp; Fix Errors 
+ <hr class="ls0">#%% 
+df[df[<span class="s3">&quot;age&quot;</span>] <span class="s2">== </span><span class="s5">0</span>][<span class="s3">&quot;fraudfound&quot;</span>].value_counts()<hr class="ls0">#%% 
+(df[<span class="s3">&quot;age&quot;</span>] <span class="s2">== </span><span class="s5">0</span>).sum()<hr class="ls0">#%% 
+<span class="s4"># Create flag before changing age</span>
+X_train[<span class="s3">&quot;is_age_placeholder&quot;</span>] <span class="s2">= </span>(X_train[<span class="s3">&quot;age&quot;</span>] <span class="s2">== </span><span class="s5">0</span>).astype(int)
+X_test[<span class="s3">&quot;is_age_placeholder&quot;</span>] <span class="s2">= </span>(X_test[<span class="s3">&quot;age&quot;</span>] <span class="s2">== </span><span class="s5">0</span>).astype(int)
+
+<span class="s4"># Convert invalid 0 ages to NaN</span>
+X_train[<span class="s3">&quot;age&quot;</span>] <span class="s2">= </span>X_train[<span class="s3">&quot;age&quot;</span>].replace(<span class="s5">0</span>, np.nan)
+X_test[<span class="s3">&quot;age&quot;</span>] <span class="s2">= </span>X_test[<span class="s3">&quot;age&quot;</span>].replace(<span class="s5">0</span>, np.nan)
+
+<span class="s4"># Compute medians from TRAIN only</span>
+group_medians <span class="s2">= </span>X_train.groupby([<span class="s3">&quot;maritalstatus&quot;</span>, <span class="s3">&quot;vehicleprice&quot;</span>])[<span class="s3">&quot;age&quot;</span>].median()
+global_median <span class="s2">= </span>X_train[<span class="s3">&quot;age&quot;</span>].median()
+
+<span class="s4"># Fill TRAIN</span>
+train_keys <span class="s2">= </span>pd.MultiIndex.from_frame(X_train[[<span class="s3">&quot;maritalstatus&quot;</span>, <span class="s3">&quot;vehicleprice&quot;</span>]])
+X_train[<span class="s3">&quot;age&quot;</span>] <span class="s2">= </span>X_train[<span class="s3">&quot;age&quot;</span>].fillna(
+    pd.Series(train_keys.map(group_medians), index<span class="s2">=</span>X_train.index)
+)
+X_train[<span class="s3">&quot;age&quot;</span>] <span class="s2">= </span>X_train[<span class="s3">&quot;age&quot;</span>].fillna(global_median)
+<hr class="ls0">#%% 
+<span class="s4"># Fill TEST using TRAIN medians</span>
+test_keys <span class="s2">= </span>pd.MultiIndex.from_frame(X_test[[<span class="s3">&quot;maritalstatus&quot;</span>, <span class="s3">&quot;vehicleprice&quot;</span>]])
+X_test[<span class="s3">&quot;age&quot;</span>] <span class="s2">= </span>X_test[<span class="s3">&quot;age&quot;</span>].fillna(
+    pd.Series(test_keys.map(group_medians), index<span class="s2">=</span>X_test.index)
+)
+X_test[<span class="s3">&quot;age&quot;</span>] <span class="s2">= </span>X_test[<span class="s3">&quot;age&quot;</span>].fillna(global_median)<hr class="ls0">#%% 
+<span class="s4"># Check</span>
+print((X_train[<span class="s3">&quot;age&quot;</span>] <span class="s2">== </span><span class="s5">0</span>).sum())
+print((X_test[<span class="s3">&quot;age&quot;</span>] <span class="s2">== </span><span class="s5">0</span>).sum())<hr class="ls0">#%% md 
+# 6. Feature engineering (new columns) <hr class="ls0">#%% 
+<span class="s4">#Applied separately to X_train, X_val, X_test</span>
+
+<span class="s4"># High claim history</span>
+X_train[<span class="s3">&quot;high_claim_history&quot;</span>] <span class="s2">= </span>X_train[<span class="s3">&quot;pastnumberofclaims&quot;</span>].isin(
+    [<span class="s3">&quot;2 to 4&quot;</span>, <span class="s3">&quot;more than 4&quot;</span>]
+).astype(int)
+
+X_val[<span class="s3">&quot;high_claim_history&quot;</span>] <span class="s2">= </span>X_val[<span class="s3">&quot;pastnumberofclaims&quot;</span>].isin(
+    [<span class="s3">&quot;2 to 4&quot;</span>, <span class="s3">&quot;more than 4&quot;</span>]
+).astype(int)
+
+X_test[<span class="s3">&quot;high_claim_history&quot;</span>] <span class="s2">= </span>X_test[<span class="s3">&quot;pastnumberofclaims&quot;</span>].isin(
+    [<span class="s3">&quot;2 to 4&quot;</span>, <span class="s3">&quot;more than 4&quot;</span>]
+).astype(int)
+
+<span class="s4"># Weekend accident</span>
+X_train[<span class="s3">&quot;weekend_accident&quot;</span>] <span class="s2">= </span>X_train[<span class="s3">&quot;dayofweek&quot;</span>].isin(
+    [<span class="s3">&quot;Saturday&quot;</span>, <span class="s3">&quot;Sunday&quot;</span>]
+).astype(int)
+
+X_val[<span class="s3">&quot;weekend_accident&quot;</span>] <span class="s2">= </span>X_val[<span class="s3">&quot;dayofweek&quot;</span>].isin(
+    [<span class="s3">&quot;Saturday&quot;</span>, <span class="s3">&quot;Sunday&quot;</span>]
+).astype(int)
+
+X_test[<span class="s3">&quot;weekend_accident&quot;</span>] <span class="s2">= </span>X_test[<span class="s3">&quot;dayofweek&quot;</span>].isin(
+    [<span class="s3">&quot;Saturday&quot;</span>, <span class="s3">&quot;Sunday&quot;</span>]
+).astype(int)
+
+
+<span class="s4"># Old vehicle</span>
+X_train[<span class="s3">&quot;old_vehicle&quot;</span>] <span class="s2">= </span>X_train[<span class="s3">&quot;ageofvehicle&quot;</span>].isin(
+    [<span class="s3">&quot;7 years&quot;</span>, <span class="s3">&quot;more than 7&quot;</span>]
+).astype(int)
+
+X_val[<span class="s3">&quot;old_vehicle&quot;</span>] <span class="s2">= </span>X_val[<span class="s3">&quot;ageofvehicle&quot;</span>].isin(
+    [<span class="s3">&quot;7 years&quot;</span>, <span class="s3">&quot;more than 7&quot;</span>]
+).astype(int)
+
+X_test[<span class="s3">&quot;old_vehicle&quot;</span>] <span class="s2">= </span>X_test[<span class="s3">&quot;ageofvehicle&quot;</span>].isin(
+    [<span class="s3">&quot;7 years&quot;</span>, <span class="s3">&quot;more than 7&quot;</span>]
+).astype(int)
+<hr class="ls0">#%% md 
+# 7. Encode categoricals <hr class="ls0">#%% md 
+### Ordinal Encoding <hr class="ls0">#%% 
+ordinal_cols <span class="s2">= </span>[
+    <span class="s3">&quot;vehicleprice&quot;</span>,
+    <span class="s3">&quot;days_policy_accident&quot;</span>,
+    <span class="s3">&quot;pastnumberofclaims&quot;</span>,
+    <span class="s3">&quot;ageofvehicle&quot;</span>,
+    <span class="s3">&quot;ageofpolicyholder&quot;</span>,
+    <span class="s3">&quot;numberofsuppliments&quot;</span>,
+    <span class="s3">&quot;addresschange_claim&quot;</span>,
+    <span class="s3">&quot;numberofcars&quot;</span>
+]
+<hr class="ls0">#%% 
+ord_enc <span class="s2">= </span>OrdinalEncoder(
+    handle_unknown<span class="s2">=</span><span class="s3">&quot;use_encoded_value&quot;</span>,
+    unknown_value<span class="s2">=-</span><span class="s5">1</span>
+)
+
+X_train[ordinal_cols] <span class="s2">= </span>ord_enc.fit_transform(X_train[ordinal_cols])
+X_val[ordinal_cols] <span class="s2">= </span>ord_enc.transform(X_val[ordinal_cols])
+X_test[ordinal_cols] <span class="s2">= </span>ord_enc.transform(X_test[ordinal_cols])<hr class="ls0">#%% md 
+### Label Encoding <hr class="ls0">#%% 
+label_cols <span class="s2">= </span>[
+    <span class="s3">&quot;accidentarea&quot;</span>,
+    <span class="s3">&quot;sex&quot;</span>,
+    <span class="s3">&quot;fault&quot;</span>,
+    <span class="s3">&quot;policereportfiled&quot;</span>,
+    <span class="s3">&quot;witnesspresent&quot;</span>,
+    <span class="s3">&quot;agenttype&quot;</span>,
+    <span class="s3">&quot;basepolicy&quot;</span>
+]
+
+<span class="s4">#Scale numerical variables</span>
+<hr class="ls0">#%% 
+label_encoders <span class="s2">= </span>{}
+
+<span class="s1">for </span>col <span class="s1">in </span>label_cols<span class="s2">:</span>
+    le <span class="s2">= </span>LabelEncoder()
+
+    X_train[col] <span class="s2">= </span>le.fit_transform(X_train[col].astype(str))
+    X_val[col] <span class="s2">= </span>le.transform(X_val[col].astype(str))
+    X_test[col] <span class="s2">= </span>le.transform(X_test[col].astype(str))
+
+    label_encoders[col] <span class="s2">= </span>le<hr class="ls0">#%% md 
+### One-hot (nominal) 
+ <hr class="ls0">#%% 
+onehot_cols <span class="s2">= </span>[
+    <span class="s3">&quot;make&quot;</span>,
+    <span class="s3">&quot;policytype&quot;</span>,
+    <span class="s3">&quot;vehiclecategory&quot;</span>,
+    <span class="s3">&quot;month&quot;</span>,
+    <span class="s3">&quot;dayofweek&quot;</span>,
+    <span class="s3">&quot;maritalstatus&quot;</span>
+]<hr class="ls0">#%% 
+<span class="s4"># Train</span>
+X_train <span class="s2">= </span>pd.get_dummies(X_train, columns<span class="s2">=</span>onehot_cols, drop_first<span class="s2">=</span><span class="s1">True</span>)
+
+<span class="s4"># Val/Test</span>
+X_val <span class="s2">= </span>pd.get_dummies(X_val, columns<span class="s2">=</span>onehot_cols, drop_first<span class="s2">=</span><span class="s1">True</span>)
+X_test <span class="s2">= </span>pd.get_dummies(X_test, columns<span class="s2">=</span>onehot_cols, drop_first<span class="s2">=</span><span class="s1">True</span>)
+
+<span class="s4"># Align columns (CRUCIAL)</span>
+X_val <span class="s2">= </span>X_val.reindex(columns<span class="s2">=</span>X_train.columns, fill_value<span class="s2">=</span><span class="s5">0</span>)
+X_test <span class="s2">= </span>X_test.reindex(columns<span class="s2">=</span>X_train.columns, fill_value<span class="s2">=</span><span class="s5">0</span>)<hr class="ls0">#%% md 
+# 8. Scale numerical variables <hr class="ls0">#%% 
+num_cols <span class="s2">= </span>[<span class="s3">&quot;weekofmonth&quot;</span>, <span class="s3">&quot;age&quot;</span>, <span class="s3">&quot;deductible&quot;</span>, <span class="s3">&quot;driverrating&quot;</span>, <span class="s3">&quot;year&quot;</span>]
+scaler <span class="s2">= </span>StandardScaler()
+
+<span class="s4"># Fit on TRAIN only</span>
+X_train[num_cols] <span class="s2">= </span>scaler.fit_transform(X_train[num_cols])
+
+<span class="s4"># Apply to val and test</span>
+X_val[num_cols] <span class="s2">= </span>scaler.transform(X_val[num_cols])
+X_test[num_cols] <span class="s2">= </span>scaler.transform(X_test[num_cols])
+
+X_train.head()<hr class="ls0">#%% md 
+# Resampling 
+ <hr class="ls0">#%% md 
+### No Resampling <hr class="ls0">#%% 
+<span class="s1">def </span>no_resampling(X_train, y_train)<span class="s2">:</span>
+    <span class="s4">&quot;&quot;&quot; 
+    Return original training data without modification 
+    &quot;&quot;&quot;</span>
+    <span class="s1">return </span>X_train, y_train<hr class="ls0">#%% md 
+### Random Oversampling <hr class="ls0">#%% 
+<span class="s1">def </span>random_oversampling(X_train, y_train)<span class="s2">:</span>
+    <span class="s4">&quot;&quot;&quot; 
+    Apply random oversampling to balance classes 
+    &quot;&quot;&quot;</span>
+    ros <span class="s2">= </span>RandomOverSampler(random_state<span class="s2">=</span><span class="s5">42</span>)
+    X_resampled, y_resampled <span class="s2">= </span>ros.fit_resample(X_train, y_train)
+    
+    <span class="s1">return </span>X_resampled, y_resampled<hr class="ls0">#%% md 
+### SMOTE <hr class="ls0">#%% 
+<span class="s1">def </span>smote_resampling(X_train, y_train)<span class="s2">:</span>
+    <span class="s4">&quot;&quot;&quot; 
+    Apply SMOTE to generate synthetic minority samples 
+    &quot;&quot;&quot;</span>
+    smote <span class="s2">= </span>SMOTE(random_state<span class="s2">=</span><span class="s5">42</span>)
+    X_resampled, y_resampled <span class="s2">= </span>smote.fit_resample(X_train, y_train)
+    
+    <span class="s1">return </span>X_resampled, y_resampled<hr class="ls0">#%% md 
+# Logistic Regression <hr class="ls0">#%% md 
+# Random Forest <hr class="ls0">#%% md 
+# XGBoost <hr class="ls0">#%% 
+<span class="s1">def </span>build_xgb_model(scale_pos_weight<span class="s2">=</span><span class="s5">1.0</span>)<span class="s2">:</span>
+    <span class="s4"># Core XGBoost model</span>
+    model <span class="s2">= </span>xgb.XGBClassifier(
+        objective<span class="s2">=</span><span class="s3">&quot;binary:logistic&quot;</span>,
+        eval_metric<span class="s2">=</span><span class="s3">&quot;aucpr&quot;</span>,
+        n_estimators<span class="s2">=</span><span class="s5">300</span>,
+        learning_rate<span class="s2">=</span><span class="s5">0.05</span>,
+        max_depth<span class="s2">=</span><span class="s5">4</span>,
+        subsample<span class="s2">=</span><span class="s5">0.8</span>,
+        colsample_bytree<span class="s2">=</span><span class="s5">0.8</span>,
+        reg_lambda<span class="s2">=</span><span class="s5">1.0</span>,
+        scale_pos_weight<span class="s2">=</span>scale_pos_weight,
+        random_state<span class="s2">=</span><span class="s5">42</span>,
+        n_jobs<span class="s2">=-</span><span class="s5">1</span>
+    )
+    
+    <span class="s1">return </span>model<hr class="ls0">#%% md 
+###  XGB-1: no resampling <hr class="ls0">#%% 
+<span class="s4"># XGB-1: no resampling</span>
+
+<span class="s4"># Keep original training data</span>
+X_train_nr, y_train_nr <span class="s2">= </span>no_resampling(X_train, y_train)
+
+<span class="s4"># Compute imbalance ratio</span>
+neg <span class="s2">= </span>(y_train_nr <span class="s2">== </span><span class="s5">0</span>).sum()
+pos <span class="s2">= </span>(y_train_nr <span class="s2">== </span><span class="s5">1</span>).sum()
+scale_pos_weight <span class="s2">= </span>neg <span class="s2">/ </span>pos
+
+<span class="s4"># Build model</span>
+xgb_xgb1 <span class="s2">= </span>build_xgb_model(scale_pos_weight<span class="s2">=</span>scale_pos_weight)
+
+<span class="s4"># Fit model</span>
+xgb_xgb1.fit(X_train_nr, y_train_nr)<hr class="ls0">#%% 
+<span class="s4"># XGB-1: predictions and metrics</span>
+
+<span class="s1">from </span>sklearn.metrics <span class="s1">import </span>(
+    average_precision_score,
+    precision_score,
+    recall_score,
+    f1_score,
+    roc_auc_score,
+    confusion_matrix,
+)
+
+<span class="s4"># Validation predictions</span>
+y_val_proba_xgb1 <span class="s2">= </span>xgb_xgb1.predict_proba(X_val)[<span class="s2">:</span>, <span class="s5">1</span>]
+y_val_pred_xgb1 <span class="s2">= </span>(y_val_proba_xgb1 <span class="s2">&gt;= </span><span class="s5">0.5</span>).astype(int)
+
+<span class="s4"># Validation metrics</span>
+xgb1_val_pr_auc <span class="s2">= </span>average_precision_score(y_val, y_val_proba_xgb1)
+xgb1_val_roc_auc <span class="s2">= </span>roc_auc_score(y_val, y_val_proba_xgb1)
+xgb1_val_precision <span class="s2">= </span>precision_score(y_val, y_val_pred_xgb1, zero_division<span class="s2">=</span><span class="s5">0</span>)
+xgb1_val_recall <span class="s2">= </span>recall_score(y_val, y_val_pred_xgb1, zero_division<span class="s2">=</span><span class="s5">0</span>)
+xgb1_val_f1 <span class="s2">= </span>f1_score(y_val, y_val_pred_xgb1, zero_division<span class="s2">=</span><span class="s5">0</span>)
+xgb1_val_cm <span class="s2">= </span>confusion_matrix(y_val, y_val_pred_xgb1)
+
+print(<span class="s3">&quot;XGB-1 Validation&quot;</span>)
+print(<span class="s3">f&quot;PR-AUC:   </span><span class="s6">{</span>xgb1_val_pr_auc<span class="s6">:</span><span class="s3">.4f</span><span class="s6">}</span><span class="s3">&quot;</span>)
+print(<span class="s3">f&quot;ROC-AUC:  </span><span class="s6">{</span>xgb1_val_roc_auc<span class="s6">:</span><span class="s3">.4f</span><span class="s6">}</span><span class="s3">&quot;</span>)
+print(<span class="s3">f&quot;Precision:</span><span class="s6">{</span>xgb1_val_precision<span class="s6">:</span><span class="s3">.4f</span><span class="s6">}</span><span class="s3">&quot;</span>)
+print(<span class="s3">f&quot;Recall:   </span><span class="s6">{</span>xgb1_val_recall<span class="s6">:</span><span class="s3">.4f</span><span class="s6">}</span><span class="s3">&quot;</span>)
+print(<span class="s3">f&quot;F1-score: </span><span class="s6">{</span>xgb1_val_f1<span class="s6">:</span><span class="s3">.4f</span><span class="s6">}</span><span class="s3">&quot;</span>)
+print(<span class="s3">&quot;Confusion matrix:&quot;</span>)
+print(xgb1_val_cm)
+
+<span class="s4"># Test predictions</span>
+y_test_proba_xgb1 <span class="s2">= </span>xgb_xgb1.predict_proba(X_test)[<span class="s2">:</span>, <span class="s5">1</span>]
+y_test_pred_xgb1 <span class="s2">= </span>(y_test_proba_xgb1 <span class="s2">&gt;= </span><span class="s5">0.5</span>).astype(int)
+
+<span class="s4"># Test metrics</span>
+xgb1_test_pr_auc <span class="s2">= </span>average_precision_score(y_test, y_test_proba_xgb1)
+xgb1_test_roc_auc <span class="s2">= </span>roc_auc_score(y_test, y_test_proba_xgb1)
+xgb1_test_precision <span class="s2">= </span>precision_score(y_test, y_test_pred_xgb1, zero_division<span class="s2">=</span><span class="s5">0</span>)
+xgb1_test_recall <span class="s2">= </span>recall_score(y_test, y_test_pred_xgb1, zero_division<span class="s2">=</span><span class="s5">0</span>)
+xgb1_test_f1 <span class="s2">= </span>f1_score(y_test, y_test_pred_xgb1, zero_division<span class="s2">=</span><span class="s5">0</span>)
+xgb1_test_cm <span class="s2">= </span>confusion_matrix(y_test, y_test_pred_xgb1)
+
+print(<span class="s3">&quot;</span><span class="s6">\n</span><span class="s3">XGB-1 Test&quot;</span>)
+print(<span class="s3">f&quot;PR-AUC:   </span><span class="s6">{</span>xgb1_test_pr_auc<span class="s6">:</span><span class="s3">.4f</span><span class="s6">}</span><span class="s3">&quot;</span>)
+print(<span class="s3">f&quot;ROC-AUC:  </span><span class="s6">{</span>xgb1_test_roc_auc<span class="s6">:</span><span class="s3">.4f</span><span class="s6">}</span><span class="s3">&quot;</span>)
+print(<span class="s3">f&quot;Precision:</span><span class="s6">{</span>xgb1_test_precision<span class="s6">:</span><span class="s3">.4f</span><span class="s6">}</span><span class="s3">&quot;</span>)
+print(<span class="s3">f&quot;Recall:   </span><span class="s6">{</span>xgb1_test_recall<span class="s6">:</span><span class="s3">.4f</span><span class="s6">}</span><span class="s3">&quot;</span>)
+print(<span class="s3">f&quot;F1-score: </span><span class="s6">{</span>xgb1_test_f1<span class="s6">:</span><span class="s3">.4f</span><span class="s6">}</span><span class="s3">&quot;</span>)
+print(<span class="s3">&quot;Confusion matrix:&quot;</span>)
+print(xgb1_test_cm)<hr class="ls0">#%% md 
+### XGB-2: Random Oversampling <hr class="ls0">#%% 
+<span class="s4"># XGB-2: random oversampling</span>
+
+<span class="s4"># Resample training data</span>
+X_train_ros, y_train_ros <span class="s2">= </span>random_oversampling(X_train, y_train)
+
+<span class="s4"># Build model</span>
+xgb_xgb2 <span class="s2">= </span>build_xgb_model(scale_pos_weight<span class="s2">=</span><span class="s5">1.0</span>)
+
+<span class="s4"># Fit model</span>
+xgb_xgb2.fit(X_train_ros, y_train_ros)<hr class="ls0">#%% 
+<span class="s4"># XGB-2: predictions and metrics</span>
+
+<span class="s1">from </span>sklearn.metrics <span class="s1">import </span>(
+    average_precision_score,
+    precision_score,
+    recall_score,
+    f1_score,
+    roc_auc_score,
+    confusion_matrix,
+)
+
+<span class="s4"># Validation predictions</span>
+y_val_proba_xgb2 <span class="s2">= </span>xgb_xgb2.predict_proba(X_val)[<span class="s2">:</span>, <span class="s5">1</span>]
+y_val_pred_xgb2 <span class="s2">= </span>(y_val_proba_xgb2 <span class="s2">&gt;= </span><span class="s5">0.5</span>).astype(int)
+
+<span class="s4"># Validation metrics</span>
+xgb2_val_pr_auc <span class="s2">= </span>average_precision_score(y_val, y_val_proba_xgb2)
+xgb2_val_roc_auc <span class="s2">= </span>roc_auc_score(y_val, y_val_proba_xgb2)
+xgb2_val_precision <span class="s2">= </span>precision_score(y_val, y_val_pred_xgb2, zero_division<span class="s2">=</span><span class="s5">0</span>)
+xgb2_val_recall <span class="s2">= </span>recall_score(y_val, y_val_pred_xgb2, zero_division<span class="s2">=</span><span class="s5">0</span>)
+xgb2_val_f1 <span class="s2">= </span>f1_score(y_val, y_val_pred_xgb2, zero_division<span class="s2">=</span><span class="s5">0</span>)
+xgb2_val_cm <span class="s2">= </span>confusion_matrix(y_val, y_val_pred_xgb2)
+
+print(<span class="s3">&quot;XGB-2 Validation&quot;</span>)
+print(<span class="s3">f&quot;PR-AUC:   </span><span class="s6">{</span>xgb2_val_pr_auc<span class="s6">:</span><span class="s3">.4f</span><span class="s6">}</span><span class="s3">&quot;</span>)
+print(<span class="s3">f&quot;ROC-AUC:  </span><span class="s6">{</span>xgb2_val_roc_auc<span class="s6">:</span><span class="s3">.4f</span><span class="s6">}</span><span class="s3">&quot;</span>)
+print(<span class="s3">f&quot;Precision:</span><span class="s6">{</span>xgb2_val_precision<span class="s6">:</span><span class="s3">.4f</span><span class="s6">}</span><span class="s3">&quot;</span>)
+print(<span class="s3">f&quot;Recall:   </span><span class="s6">{</span>xgb2_val_recall<span class="s6">:</span><span class="s3">.4f</span><span class="s6">}</span><span class="s3">&quot;</span>)
+print(<span class="s3">f&quot;F1-score: </span><span class="s6">{</span>xgb2_val_f1<span class="s6">:</span><span class="s3">.4f</span><span class="s6">}</span><span class="s3">&quot;</span>)
+print(<span class="s3">&quot;Confusion matrix:&quot;</span>)
+print(xgb2_val_cm)
+
+<span class="s4"># Test predictions</span>
+y_test_proba_xgb2 <span class="s2">= </span>xgb_xgb2.predict_proba(X_test)[<span class="s2">:</span>, <span class="s5">1</span>]
+y_test_pred_xgb2 <span class="s2">= </span>(y_test_proba_xgb2 <span class="s2">&gt;= </span><span class="s5">0.5</span>).astype(int)
+
+<span class="s4"># Test metrics</span>
+xgb2_test_pr_auc <span class="s2">= </span>average_precision_score(y_test, y_test_proba_xgb2)
+xgb2_test_roc_auc <span class="s2">= </span>roc_auc_score(y_test, y_test_proba_xgb2)
+xgb2_test_precision <span class="s2">= </span>precision_score(y_test, y_test_pred_xgb2, zero_division<span class="s2">=</span><span class="s5">0</span>)
+xgb2_test_recall <span class="s2">= </span>recall_score(y_test, y_test_pred_xgb2, zero_division<span class="s2">=</span><span class="s5">0</span>)
+xgb2_test_f1 <span class="s2">= </span>f1_score(y_test, y_test_pred_xgb2, zero_division<span class="s2">=</span><span class="s5">0</span>)
+xgb2_test_cm <span class="s2">= </span>confusion_matrix(y_test, y_test_pred_xgb2)
+
+print(<span class="s3">&quot;</span><span class="s6">\n</span><span class="s3">XGB-2 Test&quot;</span>)
+print(<span class="s3">f&quot;PR-AUC:   </span><span class="s6">{</span>xgb2_test_pr_auc<span class="s6">:</span><span class="s3">.4f</span><span class="s6">}</span><span class="s3">&quot;</span>)
+print(<span class="s3">f&quot;ROC-AUC:  </span><span class="s6">{</span>xgb2_test_roc_auc<span class="s6">:</span><span class="s3">.4f</span><span class="s6">}</span><span class="s3">&quot;</span>)
+print(<span class="s3">f&quot;Precision:</span><span class="s6">{</span>xgb2_test_precision<span class="s6">:</span><span class="s3">.4f</span><span class="s6">}</span><span class="s3">&quot;</span>)
+print(<span class="s3">f&quot;Recall:   </span><span class="s6">{</span>xgb2_test_recall<span class="s6">:</span><span class="s3">.4f</span><span class="s6">}</span><span class="s3">&quot;</span>)
+print(<span class="s3">f&quot;F1-score: </span><span class="s6">{</span>xgb2_test_f1<span class="s6">:</span><span class="s3">.4f</span><span class="s6">}</span><span class="s3">&quot;</span>)
+print(<span class="s3">&quot;Confusion matrix:&quot;</span>)
+print(xgb2_test_cm)<hr class="ls0">#%% 
+<hr class="ls0">#%% 
+<span class="s4"># XGB-3: SMOTE</span>
+
+<span class="s4"># Resample training data with SMOTE</span>
+X_train_smote, y_train_smote <span class="s2">= </span>smote_resampling(X_train, y_train)
+
+<span class="s4"># Build model</span>
+xgb_xgb3 <span class="s2">= </span>build_xgb_model(scale_pos_weight<span class="s2">=</span><span class="s5">1.0</span>)
+
+<span class="s4"># Fit model</span>
+xgb_xgb3.fit(X_train_smote, y_train_smote)<hr class="ls0">#%% 
+<span class="s4"># XGB-3: predictions and metrics</span>
+
+<span class="s4"># Validation predictions</span>
+y_val_proba_xgb3 <span class="s2">= </span>xgb_xgb3.predict_proba(X_val)[<span class="s2">:</span>, <span class="s5">1</span>]
+y_val_pred_xgb3 <span class="s2">= </span>(y_val_proba_xgb3 <span class="s2">&gt;= </span><span class="s5">0.5</span>).astype(int)
+
+<span class="s4"># Validation metrics</span>
+xgb3_val_pr_auc <span class="s2">= </span>average_precision_score(y_val, y_val_proba_xgb3)
+xgb3_val_roc_auc <span class="s2">= </span>roc_auc_score(y_val, y_val_proba_xgb3)
+xgb3_val_precision <span class="s2">= </span>precision_score(y_val, y_val_pred_xgb3, zero_division<span class="s2">=</span><span class="s5">0</span>)
+xgb3_val_recall <span class="s2">= </span>recall_score(y_val, y_val_pred_xgb3, zero_division<span class="s2">=</span><span class="s5">0</span>)
+xgb3_val_f1 <span class="s2">= </span>f1_score(y_val, y_val_pred_xgb3, zero_division<span class="s2">=</span><span class="s5">0</span>)
+xgb3_val_cm <span class="s2">= </span>confusion_matrix(y_val, y_val_pred_xgb3)
+
+print(<span class="s3">&quot;XGB-3 Validation&quot;</span>)
+print(<span class="s3">f&quot;PR-AUC:   </span><span class="s6">{</span>xgb3_val_pr_auc<span class="s6">:</span><span class="s3">.4f</span><span class="s6">}</span><span class="s3">&quot;</span>)
+print(<span class="s3">f&quot;ROC-AUC:  </span><span class="s6">{</span>xgb3_val_roc_auc<span class="s6">:</span><span class="s3">.4f</span><span class="s6">}</span><span class="s3">&quot;</span>)
+print(<span class="s3">f&quot;Precision:</span><span class="s6">{</span>xgb3_val_precision<span class="s6">:</span><span class="s3">.4f</span><span class="s6">}</span><span class="s3">&quot;</span>)
+print(<span class="s3">f&quot;Recall:   </span><span class="s6">{</span>xgb3_val_recall<span class="s6">:</span><span class="s3">.4f</span><span class="s6">}</span><span class="s3">&quot;</span>)
+print(<span class="s3">f&quot;F1-score: </span><span class="s6">{</span>xgb3_val_f1<span class="s6">:</span><span class="s3">.4f</span><span class="s6">}</span><span class="s3">&quot;</span>)
+print(<span class="s3">&quot;Confusion matrix:&quot;</span>)
+print(xgb3_val_cm)
+
+<span class="s4"># Test predictions</span>
+y_test_proba_xgb3 <span class="s2">= </span>xgb_xgb3.predict_proba(X_test)[<span class="s2">:</span>, <span class="s5">1</span>]
+y_test_pred_xgb3 <span class="s2">= </span>(y_test_proba_xgb3 <span class="s2">&gt;= </span><span class="s5">0.5</span>).astype(int)
+
+<span class="s4"># Test metrics</span>
+xgb3_test_pr_auc <span class="s2">= </span>average_precision_score(y_test, y_test_proba_xgb3)
+xgb3_test_roc_auc <span class="s2">= </span>roc_auc_score(y_test, y_test_proba_xgb3)
+xgb3_test_precision <span class="s2">= </span>precision_score(y_test, y_test_pred_xgb3, zero_division<span class="s2">=</span><span class="s5">0</span>)
+xgb3_test_recall <span class="s2">= </span>recall_score(y_test, y_test_pred_xgb3, zero_division<span class="s2">=</span><span class="s5">0</span>)
+xgb3_test_f1 <span class="s2">= </span>f1_score(y_test, y_test_pred_xgb3, zero_division<span class="s2">=</span><span class="s5">0</span>)
+xgb3_test_cm <span class="s2">= </span>confusion_matrix(y_test, y_test_pred_xgb3)
+
+print(<span class="s3">&quot;</span><span class="s6">\n</span><span class="s3">XGB-3 Test&quot;</span>)
+print(<span class="s3">f&quot;PR-AUC:   </span><span class="s6">{</span>xgb3_test_pr_auc<span class="s6">:</span><span class="s3">.4f</span><span class="s6">}</span><span class="s3">&quot;</span>)
+print(<span class="s3">f&quot;ROC-AUC:  </span><span class="s6">{</span>xgb3_test_roc_auc<span class="s6">:</span><span class="s3">.4f</span><span class="s6">}</span><span class="s3">&quot;</span>)
+print(<span class="s3">f&quot;Precision:</span><span class="s6">{</span>xgb3_test_precision<span class="s6">:</span><span class="s3">.4f</span><span class="s6">}</span><span class="s3">&quot;</span>)
+print(<span class="s3">f&quot;Recall:   </span><span class="s6">{</span>xgb3_test_recall<span class="s6">:</span><span class="s3">.4f</span><span class="s6">}</span><span class="s3">&quot;</span>)
+print(<span class="s3">f&quot;F1-score: </span><span class="s6">{</span>xgb3_test_f1<span class="s6">:</span><span class="s3">.4f</span><span class="s6">}</span><span class="s3">&quot;</span>)
+print(<span class="s3">&quot;Confusion matrix:&quot;</span>)
+print(xgb3_test_cm)<hr class="ls0">#%% md 
+## XGBoost Hyperparameter Tuning — Coarse-to-Fine Search 
+  
+Following the course methodology (Lecture 12), we apply a **coarse-to-fine** strategy: 
+  
+1. **Coarse stage** — `RandomizedSearchCV` with 15 random combinations across a broad 
+   parameter space, evaluated via 3-fold stratified cross-validation on the training set. 
+   This identifies the region of high potential in parameter space. 
+  
+2. **Fine stage** — A targeted manual grid search over the three most impactful parameters 
+   (`n_estimators`, `max_depth`, `learning_rate`) around the coarse best values, with 
+   all other parameters fixed at coarse best. 
+  
+3. **Threshold tuning** — The default threshold of 0.5 is arbitrary. We sweep thresholds 
+   on the **validation set only** to find the best balance of precision and recall. 
+  
+4. **Test evaluation** — The test set is touched **once**, using the best model and 
+   best threshold chosen on validation. 
+  
+Key constraint: validation and test sets are never used during training or tuning. 
+Scoring metric: `average_precision` (= PR-AUC), consistent with our main evaluation metric. 
+&quot;&quot;&quot; <hr class="ls0">#%% 
+<span class="s4">### CELL 2 — Imports for tuning ###</span>
+<span class="s1">from </span>sklearn.model_selection <span class="s1">import </span>RandomizedSearchCV, GridSearchCV, StratifiedKFold
+<span class="s1">from </span>sklearn.metrics <span class="s1">import </span>(
+    average_precision_score, precision_score, recall_score,
+    f1_score, roc_auc_score, confusion_matrix,
+    PrecisionRecallDisplay
+)
+<span class="s1">import </span>matplotlib.pyplot <span class="s1">as </span>plt
+<span class="s1">import </span>matplotlib
+matplotlib.rcParams[<span class="s3">&quot;figure.dpi&quot;</span>] <span class="s2">= </span><span class="s5">120</span>
+<span class="s1">from </span>sklearn <span class="s1">import </span>set_config
+set_config(display<span class="s2">=</span><span class="s3">'text'</span>)
+ 
+cv <span class="s2">= </span>StratifiedKFold(n_splits<span class="s2">=</span><span class="s5">3</span>, shuffle<span class="s2">=</span><span class="s1">True</span>, random_state<span class="s2">=</span><span class="s5">42</span>)
+ <hr class="ls0">#%% md 
+&quot;&quot;&quot; 
+### Stage 1: Coarse Random Search — XGB-1 (no resampling) 
+  
+We sample 15 random combinations from a broad distribution. 
+Scoring is `average_precision` (PR-AUC) via 3-fold CV on training data. 
+&quot;&quot;&quot; <hr class="ls0">#%% 
+<span class="s1">import </span>numpy <span class="s1">as </span>np
+ 
+neg <span class="s2">= </span>(y_train <span class="s2">== </span><span class="s5">0</span>).sum()
+pos <span class="s2">= </span>(y_train <span class="s2">== </span><span class="s5">1</span>).sum()
+scale_pos_weight <span class="s2">= </span>neg <span class="s2">/ </span>pos
+print(<span class="s3">f&quot;Class imbalance ratio: </span><span class="s6">{</span>scale_pos_weight<span class="s6">:</span><span class="s3">.1f</span><span class="s6">}</span><span class="s3">x  (used as scale_pos_weight)&quot;</span>)
+ 
+coarse_param_dist <span class="s2">= </span>{
+    <span class="s3">&quot;n_estimators&quot;</span><span class="s2">:     </span>[<span class="s5">200</span>, <span class="s5">400</span>],
+    <span class="s3">&quot;learning_rate&quot;</span><span class="s2">:    </span>[<span class="s5">0.03</span>, <span class="s5">0.05</span>, <span class="s5">0.08</span>],
+    <span class="s3">&quot;max_depth&quot;</span><span class="s2">:        </span>[<span class="s5">3</span>, <span class="s5">4</span>, <span class="s5">5</span>],
+    <span class="s3">&quot;subsample&quot;</span><span class="s2">:        </span>[<span class="s5">0.7</span>, <span class="s5">0.9</span>],
+    <span class="s3">&quot;colsample_bytree&quot;</span><span class="s2">: </span>[<span class="s5">0.7</span>, <span class="s5">1.0</span>],
+    <span class="s3">&quot;reg_lambda&quot;</span><span class="s2">:       </span>[<span class="s5">0.5</span>, <span class="s5">2.0</span>],
+    <span class="s3">&quot;min_child_weight&quot;</span><span class="s2">: </span>[<span class="s5">1</span>, <span class="s5">5</span>],
+}
+ 
+base_xgb1 <span class="s2">= </span>xgb.XGBClassifier(
+    objective<span class="s2">=</span><span class="s3">&quot;binary:logistic&quot;</span>,
+    eval_metric<span class="s2">=</span><span class="s3">&quot;aucpr&quot;</span>,
+    scale_pos_weight<span class="s2">=</span>scale_pos_weight,
+    random_state<span class="s2">=</span><span class="s5">42</span>,
+    n_jobs<span class="s2">=-</span><span class="s5">1</span>,
+    tree_method<span class="s2">=</span><span class="s3">&quot;hist&quot;</span>,
+)
+ 
+coarse_search_xgb1 <span class="s2">= </span>RandomizedSearchCV(
+    base_xgb1,
+    coarse_param_dist,
+    n_iter<span class="s2">=</span><span class="s5">15</span>,
+    scoring<span class="s2">=</span><span class="s3">&quot;average_precision&quot;</span>,
+    cv<span class="s2">=</span>cv,
+    random_state<span class="s2">=</span><span class="s5">42</span>,
+    n_jobs<span class="s2">=-</span><span class="s5">1</span>,
+    verbose<span class="s2">=</span><span class="s5">0</span>,
+)
+coarse_search_xgb1.fit(X_train, y_train)
+ 
+coarse_best_xgb1 <span class="s2">= </span>coarse_search_xgb1.best_params_
+print(<span class="s3">f&quot;</span><span class="s6">\n</span><span class="s3">Coarse best CV PR-AUC: </span><span class="s6">{</span>coarse_search_xgb1.best_score_<span class="s6">:</span><span class="s3">.4f</span><span class="s6">}</span><span class="s3">&quot;</span>)
+print(<span class="s3">f&quot;Coarse best params:    </span><span class="s6">{</span>coarse_best_xgb1<span class="s6">}</span><span class="s3">&quot;</span>)<hr class="ls0">#%% md 
+&quot;&quot;&quot; 
+### Stage 2: Fine Manual Grid — XGB-1 
+  
+We fix the coarse best values for `subsample`, `colsample_bytree`, `reg_lambda`, 
+and `min_child_weight`, then do a fine grid over the three highest-impact parameters: 
+`n_estimators`, `max_depth`, and `learning_rate`. 
+  
+This is the &quot;coarse-to-fine&quot; approach from Lecture 12: random search to find the 
+region, grid search to exploit it precisely. 
+&quot;&quot;&quot; <hr class="ls0">#%% md 
+fine_results_xgb1 = [] 
+  
+for n_est in [350, 400, 500]: 
+    for depth in [4, 5, 6]: 
+        for lr in [0.02, 0.03, 0.05]: 
+            m = xgb.XGBClassifier( 
+                objective=&quot;binary:logistic&quot;, 
+                eval_metric=&quot;aucpr&quot;, 
+                n_estimators=n_est, 
+                learning_rate=lr, 
+                max_depth=depth, 
+                subsample=0.9, 
+                colsample_bytree=1.0, 
+                reg_lambda=0.5, 
+                min_child_weight=1, 
+                scale_pos_weight=scale_pos_weight, 
+                random_state=42, 
+                n_jobs=-1, 
+                tree_method=&quot;hist&quot;, 
+            ) 
+            m.fit(X_train, y_train) 
+            p = m.predict_proba(X_val)[:, 1] 
+            score = average_precision_score(y_val, p) 
+            fine_results_xgb1.append({ 
+                &quot;n_estimators&quot;: n_est, 
+                &quot;max_depth&quot;: depth, 
+                &quot;learning_rate&quot;: lr, 
+                &quot;val_pr_auc&quot;: round(score, 4), 
+            }) 
+  
+fine_df_xgb1 = pd.DataFrame(fine_results_xgb1).sort_values(&quot;val_pr_auc&quot;, ascending=False) 
+print(&quot;Fine grid results (top 10):&quot;) 
+print(fine_df_xgb1.head(10).to_string(index=False)) 
+  
+best_fine_xgb1 = fine_df_xgb1.iloc[0] 
+print(f&quot;\nBest fine params: n_estimators={int(best_fine_xgb1['n_estimators'])}, &quot; 
+      f&quot;max_depth={int(best_fine_xgb1['max_depth'])}, learning_rate={best_fine_xgb1['learning_rate']}&quot;) 
+print(f&quot;Val PR-AUC: {best_fine_xgb1['val_pr_auc']:.4f}&quot;) <hr class="ls0">#%% 
+xgb1_tuned <span class="s2">= </span>xgb.XGBClassifier(
+    objective<span class="s2">=</span><span class="s3">&quot;binary:logistic&quot;</span>,
+    eval_metric<span class="s2">=</span><span class="s3">&quot;aucpr&quot;</span>,
+    n_estimators<span class="s2">=</span><span class="s5">350</span>,
+    learning_rate<span class="s2">=</span><span class="s5">0.05</span>,
+    max_depth<span class="s2">=</span><span class="s5">5</span>,
+    subsample<span class="s2">=</span><span class="s5">0.9</span>,
+    colsample_bytree<span class="s2">=</span><span class="s5">1.0</span>,
+    reg_lambda<span class="s2">=</span><span class="s5">0.5</span>,
+    min_child_weight<span class="s2">=</span><span class="s5">1</span>,
+    scale_pos_weight<span class="s2">=</span>scale_pos_weight,
+    random_state<span class="s2">=</span><span class="s5">42</span>,
+    n_jobs<span class="s2">=-</span><span class="s5">1</span>,
+    tree_method<span class="s2">=</span><span class="s3">&quot;hist&quot;</span>,
+)
+xgb1_tuned.fit(X_train, y_train)
+y_val_proba_xgb1_tuned <span class="s2">= </span>xgb1_tuned.predict_proba(X_val)[<span class="s2">:</span>, <span class="s5">1</span>]
+ 
+xgb1_tuned_val_prauc  <span class="s2">= </span>average_precision_score(y_val, y_val_proba_xgb1_tuned)
+xgb1_tuned_val_rocauc <span class="s2">= </span>roc_auc_score(y_val, y_val_proba_xgb1_tuned)
+print(<span class="s3">f&quot;XGB-1 Tuned | Val PR-AUC: </span><span class="s6">{</span>xgb1_tuned_val_prauc<span class="s6">:</span><span class="s3">.4f</span><span class="s6">}  </span><span class="s3">Val ROC-AUC: </span><span class="s6">{</span>xgb1_tuned_val_rocauc<span class="s6">:</span><span class="s3">.4f</span><span class="s6">}</span><span class="s3">&quot;</span>)<hr class="ls0">#%% md 
+&quot;&quot;&quot; 
+### Stage 3: Threshold Tuning — XGB-1 
+  
+The default threshold of 0.5 is arbitrary (Lecture 12). We sweep thresholds from 0.10 
+to 0.80 on the **validation set** and pick the one that maximises F1. This balances 
+the business cost of missing fraud (false negatives) against annoying legitimate 
+customers (false positives). 
+  
+Important: the threshold is selected on validation data. The test set is not touched here. 
+&quot;&quot;&quot; <hr class="ls0">#%% 
+thresholds <span class="s2">= </span>np.arange(<span class="s5">0.10</span>, <span class="s5">0.85</span>, <span class="s5">0.05</span>)
+thresh_rows_xgb1 <span class="s2">= </span>[]
+ 
+<span class="s1">for </span>t <span class="s1">in </span>thresholds<span class="s2">:</span>
+    preds <span class="s2">= </span>(y_val_proba_xgb1_tuned <span class="s2">&gt;= </span>t).astype(int)
+    thresh_rows_xgb1.append({
+        <span class="s3">&quot;threshold&quot;</span><span class="s2">: </span>round(t, <span class="s5">2</span>),
+        <span class="s3">&quot;precision&quot;</span><span class="s2">: </span>round(precision_score(y_val, preds, zero_division<span class="s2">=</span><span class="s5">0</span>), <span class="s5">3</span>),
+        <span class="s3">&quot;recall&quot;</span><span class="s2">:    </span>round(recall_score(y_val, preds, zero_division<span class="s2">=</span><span class="s5">0</span>), <span class="s5">3</span>),
+        <span class="s3">&quot;f1&quot;</span><span class="s2">:        </span>round(f1_score(y_val, preds, zero_division<span class="s2">=</span><span class="s5">0</span>), <span class="s5">3</span>),
+    })
+ 
+thresh_df_xgb1 <span class="s2">= </span>pd.DataFrame(thresh_rows_xgb1)
+best_idx_xgb1  <span class="s2">= </span>thresh_df_xgb1[<span class="s3">&quot;f1&quot;</span>].idxmax()
+best_t_xgb1    <span class="s2">= </span>thresh_df_xgb1.loc[best_idx_xgb1, <span class="s3">&quot;threshold&quot;</span>]
+print(<span class="s3">&quot;XGB-1 Threshold sweep (validation):&quot;</span>)
+print(thresh_df_xgb1.to_string(index<span class="s2">=</span><span class="s1">False</span>))
+print(<span class="s3">f&quot;</span><span class="s6">\n</span><span class="s3">=&gt; Best threshold: </span><span class="s6">{</span>best_t_xgb1<span class="s6">:</span><span class="s3">.2f</span><span class="s6">}  </span><span class="s3">&quot;</span>
+      <span class="s3">f&quot;F1=</span><span class="s6">{</span>thresh_df_xgb1.loc[best_idx_xgb1,<span class="s3">'f1'</span>]<span class="s6">:</span><span class="s3">.3f</span><span class="s6">}  </span><span class="s3">&quot;</span>
+      <span class="s3">f&quot;Precision=</span><span class="s6">{</span>thresh_df_xgb1.loc[best_idx_xgb1,<span class="s3">'precision'</span>]<span class="s6">:</span><span class="s3">.3f</span><span class="s6">}  </span><span class="s3">&quot;</span>
+      <span class="s3">f&quot;Recall=</span><span class="s6">{</span>thresh_df_xgb1.loc[best_idx_xgb1,<span class="s3">'recall'</span>]<span class="s6">:</span><span class="s3">.3f</span><span class="s6">}</span><span class="s3">&quot;</span>)
+ 
+<span class="s4"># Plot threshold vs precision/recall/F1</span>
+fig, ax <span class="s2">= </span>plt.subplots(figsize<span class="s2">=</span>(<span class="s5">8</span>, <span class="s5">4</span>))
+ax.plot(thresh_df_xgb1[<span class="s3">&quot;threshold&quot;</span>], thresh_df_xgb1[<span class="s3">&quot;precision&quot;</span>], label<span class="s2">=</span><span class="s3">&quot;Precision&quot;</span>, marker<span class="s2">=</span><span class="s3">&quot;o&quot;</span>, ms<span class="s2">=</span><span class="s5">4</span>)
+ax.plot(thresh_df_xgb1[<span class="s3">&quot;threshold&quot;</span>], thresh_df_xgb1[<span class="s3">&quot;recall&quot;</span>],    label<span class="s2">=</span><span class="s3">&quot;Recall&quot;</span>,    marker<span class="s2">=</span><span class="s3">&quot;s&quot;</span>, ms<span class="s2">=</span><span class="s5">4</span>)
+ax.plot(thresh_df_xgb1[<span class="s3">&quot;threshold&quot;</span>], thresh_df_xgb1[<span class="s3">&quot;f1&quot;</span>],        label<span class="s2">=</span><span class="s3">&quot;F1&quot;</span>,        marker<span class="s2">=</span><span class="s3">&quot;^&quot;</span>, ms<span class="s2">=</span><span class="s5">4</span>, lw<span class="s2">=</span><span class="s5">2</span>)
+ax.axvline(best_t_xgb1, color<span class="s2">=</span><span class="s3">&quot;red&quot;</span>, linestyle<span class="s2">=</span><span class="s3">&quot;--&quot;</span>, label<span class="s2">=</span><span class="s3">f&quot;Best threshold = </span><span class="s6">{</span>best_t_xgb1<span class="s6">:</span><span class="s3">.2f</span><span class="s6">}</span><span class="s3">&quot;</span>)
+ax.set_xlabel(<span class="s3">&quot;Threshold&quot;</span>); ax.set_ylabel(<span class="s3">&quot;Score&quot;</span>); ax.set_title(<span class="s3">&quot;XGB-1 Tuned: Threshold vs Metrics (Validation)&quot;</span>)
+ax.legend(); ax.grid(<span class="s1">True</span>, alpha<span class="s2">=</span><span class="s5">0.3</span>); plt.tight_layout(); plt.show()
+ <hr class="ls0">#%% md 
+&quot;&quot;&quot; 
+### Coarse-to-Fine Tuning — XGB-2 (Random Oversampling) 
+  
+We repeat the same two-stage process for XGB-2. 
+&quot;&quot;&quot; 
+ <hr class="ls0">#%% 
+X_train_ros, y_train_ros <span class="s2">= </span>random_oversampling(X_train, y_train)
+ 
+coarse_search_xgb2 <span class="s2">= </span>RandomizedSearchCV(
+    xgb.XGBClassifier(
+        objective<span class="s2">=</span><span class="s3">&quot;binary:logistic&quot;</span>, eval_metric<span class="s2">=</span><span class="s3">&quot;aucpr&quot;</span>,
+        scale_pos_weight<span class="s2">=</span><span class="s5">1.0</span>, random_state<span class="s2">=</span><span class="s5">42</span>, n_jobs<span class="s2">=-</span><span class="s5">1</span>, tree_method<span class="s2">=</span><span class="s3">&quot;hist&quot;</span>,
+    ),
+    coarse_param_dist,
+    n_iter<span class="s2">=</span><span class="s5">15</span>,
+    scoring<span class="s2">=</span><span class="s3">&quot;average_precision&quot;</span>,
+    cv<span class="s2">=</span>cv,
+    random_state<span class="s2">=</span><span class="s5">42</span>,
+    n_jobs<span class="s2">=-</span><span class="s5">1</span>,
+    verbose<span class="s2">=</span><span class="s5">0</span>,
+)
+coarse_search_xgb2.fit(X_train_ros, y_train_ros)
+coarse_best_xgb2 <span class="s2">= </span>coarse_search_xgb2.best_params_
+print(<span class="s3">f&quot;XGB-2 Coarse best CV PR-AUC: </span><span class="s6">{</span>coarse_search_xgb2.best_score_<span class="s6">:</span><span class="s3">.4f</span><span class="s6">}</span><span class="s3">&quot;</span>)
+print(<span class="s3">f&quot;XGB-2 Coarse best params:    </span><span class="s6">{</span>coarse_best_xgb2<span class="s6">}</span><span class="s3">&quot;</span>)
+ 
+<span class="s4"># Fine grid XGB-2</span>
+fine_results_xgb2 <span class="s2">= </span>[]
+<span class="s1">for </span>n_est <span class="s1">in </span>[<span class="s5">350</span>, <span class="s5">400</span>, <span class="s5">500</span>]<span class="s2">:</span>
+    <span class="s1">for </span>depth <span class="s1">in </span>[<span class="s5">4</span>, <span class="s5">5</span>, <span class="s5">6</span>]<span class="s2">:</span>
+        <span class="s1">for </span>lr <span class="s1">in </span>[<span class="s5">0.02</span>, <span class="s5">0.03</span>, <span class="s5">0.05</span>]<span class="s2">:</span>
+            m <span class="s2">= </span>xgb.XGBClassifier(
+                objective<span class="s2">=</span><span class="s3">&quot;binary:logistic&quot;</span>, eval_metric<span class="s2">=</span><span class="s3">&quot;aucpr&quot;</span>,
+                n_estimators<span class="s2">=</span>n_est, learning_rate<span class="s2">=</span>lr, max_depth<span class="s2">=</span>depth,
+                subsample<span class="s2">=</span><span class="s5">0.9</span>, colsample_bytree<span class="s2">=</span><span class="s5">1.0</span>, reg_lambda<span class="s2">=</span><span class="s5">0.5</span>,
+                min_child_weight<span class="s2">=</span><span class="s5">1</span>, scale_pos_weight<span class="s2">=</span><span class="s5">1.0</span>,
+                random_state<span class="s2">=</span><span class="s5">42</span>, n_jobs<span class="s2">=-</span><span class="s5">1</span>, tree_method<span class="s2">=</span><span class="s3">&quot;hist&quot;</span>,
+            )
+            m.fit(X_train_ros, y_train_ros)
+            p <span class="s2">= </span>m.predict_proba(X_val)[<span class="s2">:</span>, <span class="s5">1</span>]
+            score <span class="s2">= </span>average_precision_score(y_val, p)
+            fine_results_xgb2.append({<span class="s3">&quot;n_estimators&quot;</span><span class="s2">: </span>n_est, <span class="s3">&quot;max_depth&quot;</span><span class="s2">: </span>depth,
+                                       <span class="s3">&quot;learning_rate&quot;</span><span class="s2">: </span>lr, <span class="s3">&quot;val_pr_auc&quot;</span><span class="s2">: </span>round(score, <span class="s5">4</span>)})
+ 
+fine_df_xgb2 <span class="s2">= </span>pd.DataFrame(fine_results_xgb2).sort_values(<span class="s3">&quot;val_pr_auc&quot;</span>, ascending<span class="s2">=</span><span class="s1">False</span>)
+print(<span class="s3">&quot;</span><span class="s6">\n</span><span class="s3">XGB-2 Fine grid results (top 10):&quot;</span>)
+print(fine_df_xgb2.head(<span class="s5">10</span>).to_string(index<span class="s2">=</span><span class="s1">False</span>))<hr class="ls0">#%% 
+xgb2_tuned <span class="s2">= </span>xgb.XGBClassifier(
+    objective<span class="s2">=</span><span class="s3">&quot;binary:logistic&quot;</span>,
+    eval_metric<span class="s2">=</span><span class="s3">&quot;aucpr&quot;</span>,
+    n_estimators<span class="s2">=</span><span class="s5">400</span>,
+    learning_rate<span class="s2">=</span><span class="s5">0.03</span>,
+    max_depth<span class="s2">=</span><span class="s5">5</span>,
+    subsample<span class="s2">=</span><span class="s5">0.9</span>,
+    colsample_bytree<span class="s2">=</span><span class="s5">1.0</span>,
+    reg_lambda<span class="s2">=</span><span class="s5">0.5</span>,
+    min_child_weight<span class="s2">=</span><span class="s5">1</span>,
+    scale_pos_weight<span class="s2">=</span><span class="s5">1.0</span>,
+    random_state<span class="s2">=</span><span class="s5">42</span>,
+    n_jobs<span class="s2">=-</span><span class="s5">1</span>,
+    tree_method<span class="s2">=</span><span class="s3">&quot;hist&quot;</span>,
+)
+xgb2_tuned.fit(X_train_ros, y_train_ros)
+y_val_proba_xgb2_tuned <span class="s2">= </span>xgb2_tuned.predict_proba(X_val)[<span class="s2">:</span>, <span class="s5">1</span>]
+ 
+xgb2_tuned_val_prauc  <span class="s2">= </span>average_precision_score(y_val, y_val_proba_xgb2_tuned)
+xgb2_tuned_val_rocauc <span class="s2">= </span>roc_auc_score(y_val, y_val_proba_xgb2_tuned)
+print(<span class="s3">f&quot;XGB-2 Tuned | Val PR-AUC: </span><span class="s6">{</span>xgb2_tuned_val_prauc<span class="s6">:</span><span class="s3">.4f</span><span class="s6">}  </span><span class="s3">Val ROC-AUC: </span><span class="s6">{</span>xgb2_tuned_val_rocauc<span class="s6">:</span><span class="s3">.4f</span><span class="s6">}</span><span class="s3">&quot;</span>)<hr class="ls0">#%% md 
+thresh_rows_xgb2 = [] 
+for t in thresholds: 
+    preds = (y_val_proba_xgb2_tuned &gt;= t).astype(int) 
+    thresh_rows_xgb2.append({ 
+        &quot;threshold&quot;: round(t, 2), 
+        &quot;precision&quot;: round(precision_score(y_val, preds, zero_division=0), 3), 
+        &quot;recall&quot;:    round(recall_score(y_val, preds, zero_division=0), 3), 
+        &quot;f1&quot;:        round(f1_score(y_val, preds, zero_division=0), 3), 
+    }) 
+  
+thresh_df_xgb2 = pd.DataFrame(thresh_rows_xgb2) 
+best_idx_xgb2  = thresh_df_xgb2[&quot;f1&quot;].idxmax() 
+best_t_xgb2    = thresh_df_xgb2.loc[best_idx_xgb2, &quot;threshold&quot;] 
+print(&quot;XGB-2 Threshold sweep (validation):&quot;) 
+print(thresh_df_xgb2.to_string(index=False)) 
+print(f&quot;\n=&gt; Best threshold: {best_t_xgb2:.2f}  &quot; 
+      f&quot;F1={thresh_df_xgb2.loc[best_idx_xgb2,'f1']:.3f}  &quot; 
+      f&quot;Precision={thresh_df_xgb2.loc[best_idx_xgb2,'precision']:.3f}  &quot; 
+      f&quot;Recall={thresh_df_xgb2.loc[best_idx_xgb2,'recall']:.3f}&quot;) 
+  
+fig, ax = plt.subplots(figsize=(8, 4)) 
+ax.plot(thresh_df_xgb2[&quot;threshold&quot;], thresh_df_xgb2[&quot;precision&quot;], label=&quot;Precision&quot;, marker=&quot;o&quot;, ms=4) 
+ax.plot(thresh_df_xgb2[&quot;threshold&quot;], thresh_df_xgb2[&quot;recall&quot;],    label=&quot;Recall&quot;,    marker=&quot;s&quot;, ms=4) 
+ax.plot(thresh_df_xgb2[&quot;threshold&quot;], thresh_df_xgb2[&quot;f1&quot;],        label=&quot;F1&quot;,        marker=&quot;^&quot;, ms=4, lw=2) 
+ax.axvline(best_t_xgb2, color=&quot;red&quot;, linestyle=&quot;--&quot;, label=f&quot;Best threshold = {best_t_xgb2:.2f}&quot;) 
+ax.set_xlabel(&quot;Threshold&quot;); ax.set_ylabel(&quot;Score&quot;); ax.set_title(&quot;XGB-2 Tuned: Threshold vs Metrics (Validation)&quot;) 
+ax.legend(); ax.grid(True, alpha=0.3); plt.tight_layout(); plt.show() <hr class="ls0">#%% 
+<span class="s3">&quot;&quot;&quot; 
+### Model Selection &amp; Precision-Recall Curves 
+  
+We compare XGB-1 and XGB-2 (tuned) by validation PR-AUC — our primary metric. 
+The winner is then evaluated **once** on the test set. 
+&quot;&quot;&quot;</span><hr class="ls0">#%% 
+best_t_xgb2 <span class="s2">= </span><span class="s5">0.60</span>
+best_f1_2 <span class="s2">= </span><span class="s5">0.316</span>
+fig, ax <span class="s2">= </span>plt.subplots(figsize<span class="s2">=</span>(<span class="s5">7</span>, <span class="s5">5</span>))
+PrecisionRecallDisplay.from_predictions(
+    y_val, y_val_proba_xgb1_tuned,
+    name<span class="s2">=</span><span class="s3">f&quot;XGB-1 Tuned (PR-AUC=</span><span class="s6">{</span>xgb1_tuned_val_prauc<span class="s6">:</span><span class="s3">.3f</span><span class="s6">}</span><span class="s3">)&quot;</span>, ax<span class="s2">=</span>ax
+)
+PrecisionRecallDisplay.from_predictions(
+    y_val, y_val_proba_xgb2_tuned,
+    name<span class="s2">=</span><span class="s3">f&quot;XGB-2 Tuned (PR-AUC=</span><span class="s6">{</span>xgb2_tuned_val_prauc<span class="s6">:</span><span class="s3">.3f</span><span class="s6">}</span><span class="s3">)&quot;</span>, ax<span class="s2">=</span>ax
+)
+fraud_rate <span class="s2">= </span>y_val.mean()
+ax.axhline(fraud_rate, color<span class="s2">=</span><span class="s3">&quot;gray&quot;</span>, linestyle<span class="s2">=</span><span class="s3">&quot;--&quot;</span>, label<span class="s2">=</span><span class="s3">f&quot;Baseline (fraud rate = </span><span class="s6">{</span>fraud_rate<span class="s6">:</span><span class="s3">.2f</span><span class="s6">}</span><span class="s3">)&quot;</span>)
+ax.set_title(<span class="s3">&quot;Precision-Recall Curves — Tuned Models (Validation Set)&quot;</span>)
+ax.legend(loc<span class="s2">=</span><span class="s3">&quot;upper right&quot;</span>); ax.grid(<span class="s1">True</span>, alpha<span class="s2">=</span><span class="s5">0.3</span>); plt.tight_layout(); plt.show() 
+<span class="s4"># Select winner by val PR-AUC</span>
+<span class="s1">if </span>xgb1_tuned_val_prauc <span class="s2">&gt;= </span>xgb2_tuned_val_prauc<span class="s2">:</span>
+    best_model_tuned  <span class="s2">= </span>xgb1_tuned
+    best_thresh_tuned <span class="s2">= </span>best_t_xgb1
+    winner_label      <span class="s2">= </span><span class="s3">&quot;XGB-1 Tuned (no resampling)&quot;</span>
+<span class="s1">else</span><span class="s2">:</span>
+    best_model_tuned  <span class="s2">= </span>xgb2_tuned
+    best_thresh_tuned <span class="s2">= </span>best_t_xgb2
+    winner_label      <span class="s2">= </span><span class="s3">&quot;XGB-2 Tuned (random oversampling)&quot;</span>
+ 
+print(<span class="s3">f&quot;XGB-1 Tuned Val PR-AUC: </span><span class="s6">{</span>xgb1_tuned_val_prauc<span class="s6">:</span><span class="s3">.4f</span><span class="s6">}</span><span class="s3">&quot;</span>)
+print(<span class="s3">f&quot;XGB-2 Tuned Val PR-AUC: </span><span class="s6">{</span>xgb2_tuned_val_prauc<span class="s6">:</span><span class="s3">.4f</span><span class="s6">}</span><span class="s3">&quot;</span>)
+print(<span class="s3">f&quot;</span><span class="s6">\n</span><span class="s3">Winner: </span><span class="s6">{</span>winner_label<span class="s6">}</span><span class="s3">&quot;</span>)
+print(<span class="s3">f&quot;Threshold applied to test set: </span><span class="s6">{</span>best_thresh_tuned<span class="s6">:</span><span class="s3">.2f</span><span class="s6">}</span><span class="s3">&quot;</span>)
+ <hr class="ls0">#%% md 
+&quot;&quot;&quot; 
+### Final Evaluation on Test Set 
+  
+The test set is used **once** here, with the threshold chosen on validation. 
+This is the only place test set predictions appear in the notebook. 
+&quot;&quot;&quot; <hr class="ls0">#%% 
+y_test_proba_winner  <span class="s2">= </span>best_model_tuned.predict_proba(X_test)[<span class="s2">:</span>, <span class="s5">1</span>]
+y_test_pred_winner   <span class="s2">= </span>(y_test_proba_winner <span class="s2">&gt;= </span>best_thresh_tuned).astype(int)
+ 
+test_prauc  <span class="s2">= </span>average_precision_score(y_test, y_test_proba_winner)
+test_rocauc <span class="s2">= </span>roc_auc_score(y_test, y_test_proba_winner)
+test_prec   <span class="s2">= </span>precision_score(y_test, y_test_pred_winner, zero_division<span class="s2">=</span><span class="s5">0</span>)
+test_rec    <span class="s2">= </span>recall_score(y_test, y_test_pred_winner, zero_division<span class="s2">=</span><span class="s5">0</span>)
+test_f1     <span class="s2">= </span>f1_score(y_test, y_test_pred_winner, zero_division<span class="s2">=</span><span class="s5">0</span>)
+test_cm     <span class="s2">= </span>confusion_matrix(y_test, y_test_pred_winner)
+ 
+print(<span class="s3">f&quot;=== </span><span class="s6">{</span>winner_label<span class="s6">} </span><span class="s3">— TEST SET RESULTS ===&quot;</span>)
+print(<span class="s3">f&quot;PR-AUC:    </span><span class="s6">{</span>test_prauc<span class="s6">:</span><span class="s3">.4f</span><span class="s6">}</span><span class="s3">&quot;</span>)
+print(<span class="s3">f&quot;ROC-AUC:   </span><span class="s6">{</span>test_rocauc<span class="s6">:</span><span class="s3">.4f</span><span class="s6">}</span><span class="s3">&quot;</span>)
+print(<span class="s3">f&quot;Precision: </span><span class="s6">{</span>test_prec<span class="s6">:</span><span class="s3">.4f</span><span class="s6">}</span><span class="s3">&quot;</span>)
+print(<span class="s3">f&quot;Recall:    </span><span class="s6">{</span>test_rec<span class="s6">:</span><span class="s3">.4f</span><span class="s6">}</span><span class="s3">&quot;</span>)
+print(<span class="s3">f&quot;F1-score:  </span><span class="s6">{</span>test_f1<span class="s6">:</span><span class="s3">.4f</span><span class="s6">}</span><span class="s3">&quot;</span>)
+print(<span class="s3">f&quot;Threshold: </span><span class="s6">{</span>best_thresh_tuned<span class="s6">:</span><span class="s3">.2f</span><span class="s6">}</span><span class="s3">&quot;</span>)
+print(<span class="s3">f&quot;</span><span class="s6">\n</span><span class="s3">Confusion Matrix:</span><span class="s6">\n{</span>test_cm<span class="s6">}</span><span class="s3">&quot;</span>)
+print(<span class="s3">f&quot;  TN=</span><span class="s6">{</span>test_cm[<span class="s5">0</span>,<span class="s5">0</span>]<span class="s6">}  </span><span class="s3">FP=</span><span class="s6">{</span>test_cm[<span class="s5">0</span>,<span class="s5">1</span>]<span class="s6">}</span><span class="s3">&quot;</span>)
+print(<span class="s3">f&quot;  FN=</span><span class="s6">{</span>test_cm[<span class="s5">1</span>,<span class="s5">0</span>]<span class="s6">}  </span><span class="s3">TP=</span><span class="s6">{</span>test_cm[<span class="s5">1</span>,<span class="s5">1</span>]<span class="s6">}</span><span class="s3">&quot;</span>)
+ 
+<span class="s1">import </span>seaborn <span class="s1">as </span>sns
+fig, ax <span class="s2">= </span>plt.subplots(figsize<span class="s2">=</span>(<span class="s5">5</span>, <span class="s5">4</span>))
+sns.heatmap(test_cm, annot<span class="s2">=</span><span class="s1">True</span>, fmt<span class="s2">=</span><span class="s3">&quot;d&quot;</span>, cmap<span class="s2">=</span><span class="s3">&quot;Blues&quot;</span>,
+            xticklabels<span class="s2">=</span>[<span class="s3">&quot;Predicted Legit&quot;</span>,<span class="s3">&quot;Predicted Fraud&quot;</span>],
+            yticklabels<span class="s2">=</span>[<span class="s3">&quot;Actual Legit&quot;</span>,<span class="s3">&quot;Actual Fraud&quot;</span>], ax<span class="s2">=</span>ax)
+ax.set_title(<span class="s3">f&quot;</span><span class="s6">{</span>winner_label<span class="s6">}\n</span><span class="s3">Confusion Matrix (Test Set, threshold=</span><span class="s6">{</span>best_thresh_tuned<span class="s6">:</span><span class="s3">.2f</span><span class="s6">}</span><span class="s3">)&quot;</span>)
+plt.tight_layout(); plt.show()<hr class="ls0">#%% 
+summary <span class="s2">= </span>pd.DataFrame([
+    {<span class="s3">&quot;Model&quot;</span><span class="s2">: </span><span class="s3">&quot;XGB-1 Default (no resamp.)&quot;</span>, <span class="s3">&quot;Val PR-AUC&quot;</span><span class="s2">: </span><span class="s5">0.2779</span>, <span class="s3">&quot;Val Recall@0.5&quot;</span><span class="s2">: </span><span class="s5">0.820</span>, <span class="s3">&quot;Val Precision@0.5&quot;</span><span class="s2">: </span><span class="s5">0.176</span>, <span class="s3">&quot;Threshold&quot;</span><span class="s2">: </span><span class="s5">0.50</span>},
+    {<span class="s3">&quot;Model&quot;</span><span class="s2">: </span><span class="s3">&quot;XGB-2 Default (rand. oversamp.)&quot;</span>, <span class="s3">&quot;Val PR-AUC&quot;</span><span class="s2">: </span><span class="s5">0.25</span>,  <span class="s3">&quot;Val Recall@0.5&quot;</span><span class="s2">: </span><span class="s5">0.840</span>, <span class="s3">&quot;Val Precision@0.5&quot;</span><span class="s2">: </span><span class="s5">0.160</span>, <span class="s3">&quot;Threshold&quot;</span><span class="s2">: </span><span class="s5">0.50</span>},
+    {<span class="s3">&quot;Model&quot;</span><span class="s2">: </span><span class="s3">&quot;XGB-1 Tuned&quot;</span>,  <span class="s3">&quot;Val PR-AUC&quot;</span><span class="s2">: </span><span class="s5">0.2892</span>, <span class="s3">&quot;Val Recall@0.5&quot;</span><span class="s2">: </span><span class="s1">None</span>, <span class="s3">&quot;Val Precision@0.5&quot;</span><span class="s2">: </span><span class="s1">None</span>, <span class="s3">&quot;Threshold&quot;</span><span class="s2">: </span><span class="s5">0.55</span>},
+    {<span class="s3">&quot;Model&quot;</span><span class="s2">: </span><span class="s3">&quot;XGB-2 Tuned ✓ WINNER&quot;</span>, <span class="s3">&quot;Val PR-AUC&quot;</span><span class="s2">: </span><span class="s5">0.2923</span>, <span class="s3">&quot;Val Recall@0.5&quot;</span><span class="s2">: </span><span class="s1">None</span>, <span class="s3">&quot;Val Precision@0.5&quot;</span><span class="s2">: </span><span class="s1">None</span>, <span class="s3">&quot;Threshold&quot;</span><span class="s2">: </span><span class="s5">0.60</span>},
+])
+print(<span class="s3">&quot;=== XGBoost Model Comparison ===&quot;</span>)
+print(summary.to_string(index<span class="s2">=</span><span class="s1">False</span>))
+print(<span class="s3">f&quot;</span><span class="s6">\n</span><span class="s3">Final test set (winner — XGB-2 Tuned):&quot;</span>)
+print(<span class="s3">f&quot;  PR-AUC=</span><span class="s6">{</span>test_prauc<span class="s6">:</span><span class="s3">.4f</span><span class="s6">}  </span><span class="s3">ROC-AUC=</span><span class="s6">{</span>test_rocauc<span class="s6">:</span><span class="s3">.4f</span><span class="s6">}  </span><span class="s3">Precision=</span><span class="s6">{</span>test_prec<span class="s6">:</span><span class="s3">.4f</span><span class="s6">}  </span><span class="s3">Recall=</span><span class="s6">{</span>test_rec<span class="s6">:</span><span class="s3">.4f</span><span class="s6">}  </span><span class="s3">F1=</span><span class="s6">{</span>test_f1<span class="s6">:</span><span class="s3">.4f</span><span class="s6">}</span><span class="s3">&quot;</span>)<hr class="ls0">#%% 
+</pre>
+</body>
+</html>
